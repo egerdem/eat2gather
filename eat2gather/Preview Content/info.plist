@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>LastAccessedDate</key>
+	<date>2024-08-13T16:57:59Z</date>
+	<key>NSPhotoLibraryUsageDescription</key>
+	<string>This app requires access to your photo library to select images for processing.</string>
+	<key>NSCameraUsageDescription</key>
+	<string>This app requires camera access to capture photos for food item recognition.</string>
+	<key>WorkspacePath</key>
+	<string>/Users/ege/Projects/SWIFT/eat2gather/eat2gather.xcodeproj</string>
+</dict>
+</plist>
