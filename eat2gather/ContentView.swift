@@ -7,6 +7,7 @@
 
 import SwiftUI
 import Combine
+import Vision
 
 
 struct Person: Identifiable {
@@ -37,6 +38,8 @@ struct ContentView: View {
     @State private var newFoodItem = FoodItem()
     @State private var newPersonName = ""
     @State private var isAddingPerson = false
+    @State private var selectedImage: UIImage?
+    @State private var showImagePicker = false
     @FocusState private var isInputActive: Bool
 
     let numberFormatter: NumberFormatter = {
@@ -44,57 +47,208 @@ struct ContentView: View {
         formatter.numberStyle = .decimal
         return formatter
     }()
-    
+
     let totalWidth = UIScreen.main.bounds.width - 160
     let columnWidthRatios: [CGFloat] = [0.25, 0.1, 0.15, 0.2, 0.3]
     let inputFontSize: CGFloat = 12 // Define the font size constant
 
+    
     var body: some View {
-        VStack {
-            Text("Eat #1 - \(Date(), formatter: dateFormatter)")
-                .padding(10)
-            Text("Hayvanları Seç")
-                .foregroundColor(.gray)
-                .font(.footnote)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(.bottom, -8)
-            ScrollView(.horizontal, showsIndicators: false) {
-                HStack(spacing: 10) {
-                    ForEach($people) { $person in
-                        Circle()
-                            .fill(person.isActive ? Color.yellow : Color.gray.opacity(0.1))
-                            .frame(width: 40, height: 40)
-                            .overlay(
-                                Circle()
-                                    .stroke(Color.black, lineWidth: 1)
-                            )
-                            .overlay(Text(person.name))
-                            .onTapGesture {
-                                person.isActive.toggle()
-                                //updateeatingPersons()
-                            }
+        ZStack {
+            VStack {
+                Text("Eat #1 - \(Date(), formatter: dateFormatter)")
+                    .padding(10)
+                Text("Hayvanları Seç")
+                    .foregroundColor(.gray)
+                    .font(.footnote)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.bottom, -8)
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 10) {
+                        ForEach($people) { $person in
+                            Circle()
+                                .fill(person.isActive ? Color.yellow : Color.gray.opacity(0.1))
+                                .frame(width: 40, height: 40)
+                                .overlay(
+                                    Circle()
+                                        .stroke(Color.black, lineWidth: 1)
+                                )
+                                .overlay(Text(person.name))
+                                .onTapGesture {
+                                    person.isActive.toggle()
+                                }
+                        }
+                        addPersonButton
                     }
-                    addPersonButton
+                    .padding(.vertical, 10)
                 }
-                .padding(.vertical, 10)
-            }
 
-            foodItemsSection
-            costPerPersonView
+                foodItemsSection
+                costPerPersonView
+
+                if anyEatingPersons {
+                    totalPaidView
+                }
+            }
+            .padding()
             
-                    // Show totalPaidView only if any eating person is selected
-            if anyEatingPersons {
-                totalPaidView
+            VStack {
+                Spacer()
+                HStack {
+                    Spacer()
+                    Button(action: {
+                        if let image = UIImage(named: "beykoz") {
+                                                processBillImage(image)}
+                        
+                        showImagePicker = false
+                    }) {
+                        Circle()
+                            .fill(Color.blue)
+                            .frame(width: 60, height: 60)
+                            .overlay(
+                                Image(systemName: "camera.fill")
+                                    .foregroundColor(.white)
+                                    .font(.system(size: 30))
+                            )
+                            .shadow(radius: 10)
+                    }
+                    .padding(.bottom, 30)
+                    .padding(.trailing, UIScreen.main.bounds.width / 2 - 30)
+                }
             }
         }
-        .padding()
+        .sheet(isPresented: $showImagePicker, onDismiss: {
+            if let selectedImage = selectedImage {
+                processBillImage(selectedImage)            }
+        }) {
+            ImagePicker(image: $selectedImage, sourceType: .photoLibrary)
+        }
     }
 
+    // Check if there are any eating persons
     var anyEatingPersons: Bool {
         return !newFoodItem.eatingPersons.isEmpty || foodItems.contains { !$0.eatingPersons.isEmpty }
     }
 
-    
+    // Process the bill image
+    func processBillImage(_ image: UIImage) {
+        
+        extractTextFromImage(image) { recognizedText in
+            print("Recognized Text: \(String(describing: recognizedText))")
+            guard let lines = recognizedText else {
+                print("No text recognized")
+                
+                return
+                
+            }
+            
+            // Print all the extracted lines
+                    print("Extracted Lines:")
+            for line in lines {
+                print(line)
+            }
+            
+            print("lines! \(lines)")
+            
+            // Now, parse the extracted lines
+            let parsedData = parseExtractedText(lines)
+            
+            // Output the parsed data
+            for item in parsedData {
+                let newItem = FoodItem(type: item.foodName, quantity: item.quantity, unitPrice: item.price, eatingPersons: [])
+                
+                // Print the parsed data
+                print("Parsed Item - Food Name: \(item.foodName), Quantity: \(item.quantity), Price: \(item.price)")
+                print("FoodItem created: \(newItem)")
+                
+                // Add the parsed data to the food items
+                foodItems.append(newItem)
+            }
+        }
+    }
+
+
+    func extractTextFromImage(_ image: UIImage, completion: @escaping ([String]?) -> Void) {
+        guard let cgImage = image.cgImage else {
+            completion(nil)
+            return
+        }
+
+        let requestHandler = VNImageRequestHandler(cgImage: cgImage, options: [:])
+        let request = VNRecognizeTextRequest { (request, error) in
+            guard error == nil else {
+                print("Error: \(error!.localizedDescription)")
+                completion(nil)
+                return
+            }
+
+            let recognizedText = request.results?.compactMap { result in
+                return (result as? VNRecognizedTextObservation)?.topCandidates(1).first?.string
+            }
+
+            completion(recognizedText)
+        }
+
+        request.recognitionLevel = .accurate
+        request.usesLanguageCorrection = true
+
+        DispatchQueue.global(qos: .userInitiated).async {
+            do {
+                try requestHandler.perform([request])
+            } catch {
+                print("Error: \(error.localizedDescription)")
+                completion(nil)
+            }
+        }
+
+    }
+
+    func parseExtractedText(_ extractedLines: [String]) -> [(quantity: Double, foodName: String, price: Double)] {
+        var parsedItems: [(quantity: Double, foodName: String, price: Double)] = []
+        
+        var quantity: Double?
+        var foodName = ""
+        var price: Double?
+
+        for line in extractedLines {
+            let components = line.split(separator: " ")
+            
+            // Check if the first component is a valid quantity
+            if let firstComponent = components.first, let parsedQuantity = Double(firstComponent.replacingOccurrences(of: ",", with: ".")) {
+                if let quantity = quantity, let price = price {
+                    // Append the previous item if it's complete
+                    parsedItems.append((quantity: quantity, foodName: foodName, price: price))
+                }
+                // Start a new item
+                quantity = parsedQuantity
+                foodName = components.dropFirst().dropLast().joined(separator: " ")
+                if let lastComponent = components.last, let parsedPrice = Double(lastComponent.replacingOccurrences(of: ",", with: ".")) {
+                    price = parsedPrice
+                } else {
+                    price = nil
+                }
+            } else if components.count > 1 {
+                // If the first component is not a quantity, treat it as part of the food name or price
+                if let lastComponent = components.last, let parsedPrice = Double(lastComponent.replacingOccurrences(of: ",", with: ".")) {
+                    // If the last component can be parsed as a price, update the price
+                    price = parsedPrice
+                    foodName += " " + components.dropLast().joined(separator: " ")
+                } else {
+                    // Otherwise, add this line as part of the food name
+                    foodName += " " + line
+                }
+            }
+        }
+        
+        // Append the last item if it's complete
+        if let quantity = quantity, let price = price {
+            parsedItems.append((quantity: quantity, foodName: foodName, price: price))
+        }
+
+        return parsedItems
+    }
+
+
     var addPersonButton: some View {
         Group {
             if isAddingPerson {
